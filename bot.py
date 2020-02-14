@@ -1,7 +1,10 @@
+import phone as phone
 import telebot
 import mysql.connector
 
 bot = telebot.TeleBot('1012142701:AAHPoCqUI5BtKbiTgZhRjvS8ijUnjizqtO0')
+
+# Подключение к базе данных
 
 mydb = mysql.connector.connect(
     host="34.73.1.210",
@@ -11,6 +14,8 @@ mydb = mysql.connector.connect(
 )
 
 
+# Начало бота
+
 @bot.message_handler(commands=["start"])
 def start(message):
     keyboard = telebot.types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True, one_time_keyboard=True)
@@ -18,8 +23,8 @@ def start(message):
     keyboard.add(button_phone)
     bot.send_message(message.chat.id, "Для входа нажмите кнопку 'Отправить номер телефона' ", reply_markup=keyboard)
 
-    # Авторизация
 
+# Авторизация
 
 @bot.message_handler(content_types=["contact"])
 def read_contact_data(message):
@@ -29,6 +34,24 @@ def read_contact_data(message):
     cursor.execute("SELECT count(*) FROM users WHERE phone = " + phone_number)
     myresult = cursor.fetchone()
     count = myresult[0]
+
+    # Команда для вывода общей информации о доходах и расходах
+
+    @bot.message_handler(commands=["show_info"])
+    def show_info(message):
+        cursor.execute("SELECT sum(val) FROM incomes WHERE user_id = " + str(user_id))
+        all_incomes = cursor.fetchone()
+        incomes_sum = all_incomes[0]
+        cursor.execute("SELECT sum(val) FROM expenses WHERE user_id = " + str(user_id))
+        all_expenses = cursor.fetchone()
+        expenses_sum = all_expenses[0]
+        bot.send_message(message.from_user.id, "Общая сумма Ваших доходов: " + str(incomes_sum) + " тенге")
+        bot.send_message(message.from_user.id,
+                         "Общая сумма Ваших расходов: " + str(expenses_sum) + " тенге")
+        bot.send_message(message.from_user.id, "Для детализации доходов нажмите /detail_incomes")
+        bot.send_message(message.from_user.id, "Для детализации  расходов нажмите /detail_expenses")
+
+    # Команда для вывода детальной информации о доходах
 
     @bot.message_handler(commands=["detail_incomes"])
     def detail_incomes(message):
@@ -41,6 +64,8 @@ def read_contact_data(message):
         for x in show_detail:
             bot.send_message(message.from_user.id, str(x[0]) + ": " + str(x[1]) + " тенге \n")
         bot.send_message(message.from_user.id, "Для добавления пункта нажмите /add_incomes")
+
+    # Команда для вывода детальной информации о расходах
 
     @bot.message_handler(commands=["detail_expenses"])
     def detail_expenses(message):
@@ -59,8 +84,8 @@ def read_contact_data(message):
 
         @bot.message_handler(content_types=['text'])
         def pass_or_command(message):
+            global table_name
             if message.text == '/add_incomes':
-                global table_name
                 table_name = 'incomes'
                 bot.send_message(message.from_user.id, 'Введите название: ')
                 bot.register_next_step_handler(message, set_name)
@@ -80,23 +105,12 @@ def read_contact_data(message):
                 user_id = check_pass[1]
 
                 if pass_count == 1:
-                    bot.send_message(message.from_user.id, "Добро пожаловать, " + name)
-                    cursor.execute("SELECT sum(val) FROM incomes WHERE user_id = " + str(user_id))
-                    all_incomes = cursor.fetchone()
-                    incomes_sum = all_incomes[0]
-                    cursor.execute("SELECT sum(val) FROM expenses WHERE user_id = " + str(user_id))
-                    all_expenses = cursor.fetchone()
-                    expenses_sum = all_expenses[0]
-                    bot.send_message(message.from_user.id, "Общая сумма Ваших доходов: " + str(incomes_sum) + " тенге")
                     bot.send_message(message.from_user.id,
-                                     "Общая сумма Ваших расходов: " + str(expenses_sum) + " тенге")
-                    bot.send_message(message.from_user.id, "Для детализации доходов нажмите /detail_incomes")
-                    bot.send_message(message.from_user.id, "Для детализации  расходов нажмите /detail_expenses")
+                                     "Добро пожаловать, " + name +
+                                     "\n Для просмотра общей информации, нажмите: /show_info")
 
                 else:
                     bot.send_message(message.from_user.id, "Вы ввели неверный пароль. Введите пароль еще раз: ")
-
-
 
     else:
         bot.send_message(message.from_user.id, "Вы не зарегистрированы, пожалуйста придумайте пароль")
@@ -110,10 +124,11 @@ def read_contact_data(message):
             val = (phone_number, password)
             cursor1.execute(sql, val)
             mydb.commit()
-            print("Добавлено в базу данных")
             bot.send_message(message.from_user.id,
-                             "Поздравляем, Вы успешно зарегистрированы! Вы можете пройти к Step 2!")
+                             "Поздравляем, Вы успешно зарегистрированы! \n"
+                             "Для просмотра общей информации, нажмите: /show_info")
 
+    # Функция для получения названия дохода/расхода
 
     def set_name(message):
         global get_name
@@ -121,10 +136,14 @@ def read_contact_data(message):
         bot.send_message(message.from_user.id, 'Введите значение: ')
         bot.register_next_step_handler(message, set_value)
 
+    # Функция для получения значения дохода/расхода
+
     def set_value(message):
         global message_value
         message_value = message.text
         add_new(message)
+
+    # Функция для добавления новой записи о доходе/расходе
 
     def add_new(message):
         global user_id
@@ -133,11 +152,14 @@ def read_contact_data(message):
         user = cursor.fetchone()
         user_id = user[0]
         cursor.execute(
-            "INSERT INTO " + table_name + "(user_id, title, val) VALUES (" + str(
-                user_id) + ", '" + get_name + "', " + str(message_value) + ") ")
+            "INSERT INTO " + table_name + "(user_id, title, val) "
+                                          "VALUES(" + str(user_id) + ", '" + get_name + "', " + str(
+                message_value) + ") ")
         mydb.commit()
         bot.send_message(message.chat.id, "Запись добавлена")
         total_result(message)
+
+    # Функция для отображеия обновленной записи о доходах/расходах
 
     def total_result(message):
         if table_name == 'incomes':
@@ -149,9 +171,12 @@ def read_contact_data(message):
         for x in show_detail:
             bot.send_message(message.from_user.id, str(x[0]) + ": " + str(x[1]) + " тенге \n")
         if table_name == 'incomes':
-            bot.send_message(message.from_user.id, "Для добавления пункта нажмите /add_incomes")
+            bot.send_message(message.from_user.id,
+                             "Для добавления пункта нажмите /add_incomes \n "
+                             "Чтобы вернуться назад, нажмите: /show_info")
         elif table_name == 'expenses':
-            bot.send_message(message.from_user.id, "Для добавления пункта нажмите /add_expenses")
+            bot.send_message(message.from_user.id, "Для добавления пункта нажмите /add_expenses \n "
+                                                   "Чтобы вернуться назад, нажмите: /show_info")
 
 
 bot.polling()
